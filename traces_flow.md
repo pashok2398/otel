@@ -1,45 +1,22 @@
-# Infra Traces Flow (Operator + Collector + Tempo)
+# Simplified OpenTelemetry Flow (Operator + Collector + Tempo)
 
 ```mermaid
 flowchart LR
-  subgraph Dev["GitOps / Manifests"]
-    A["Deployment/Pod annotated with inject-*"]
+  A["Application Pod<br/>(Python / Node.js / Go / Java)"] -->|OTLP traces, metrics, logs| B["OpenTelemetry Collector"]
+  B -->|Process & enrich data| C["Grafana Tempo<br/>(Traces)"]
+  B -->|Export metrics| D["Prometheus"]
+  B -->|Export logs| E["Loki"]
+
+  subgraph Operator["OpenTelemetry Operator (Kubernetes)"]
+    O1["Instrumentation CRD<br/>(defines exporter, sampler, env)"]
+    O2["Mutating Webhook<br/>injects auto-instrumentation into Pods"]
+    O1 --> O2
   end
 
-  subgraph ControlPlane["Kubernetes Control Plane"]
-    B{"OTel Operator\nMutating Webhook"}
-    C["Instrumentation CR\n(namespace/default)"]
+  O2 --> A
+
+  subgraph Visualization["Visualization / Observability"]
+    C --> F["Grafana UI<br/>(Trace viewer)"]
+    D --> F
+    E --> F
   end
-
-  subgraph WorkloadNS["Workload Namespace"]
-    D["Mutated PodSpec"]
-    D1["+ initContainer copies auto-instr"]
-    D2["+ env: OTEL_* and runtime flags"]
-    D3["+ volume mounts / PYTHONPATH or NODE_OPTIONS"]
-    E["App Pod running\n(SDK or auto-instrumentation)"]
-    G["Envoy / Ingress (optional)\nproxy spans"]
-  end
-
-  subgraph Telemetry["Telemetry Pipeline"]
-    H["OTel Collector\n(Deployment or DaemonSet)"]
-    I["Processors: batch, attributes,\nresource, transform, sampling"]
-    J["Tempo\n(distributed traces store)"]
-    K["Grafana\n(traces UI)"]
-  end
-
-  A --> B
-  B -->|Lookup policy| C
-  C -->|Exporter endpoint, sampler,\npropagators, images| B
-  B -->|Patch Pod| D
-  D --> D1
-  D --> D2
-  D --> D3
-  D --> E
-  G -- "incoming requests" --> E
-
-  %% Runtime trace path
-  E -- "OTLP traces" --> H
-  G -- "OTLP traces" --> H
-  H --> I
-  I --> J
-  K --- J
